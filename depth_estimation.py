@@ -33,7 +33,7 @@ def getStereoPair(pipeline, monoLeft, monoRight):
     monoRight.out.link(stereo.right)
 
     return stereo
-def 
+
 
 def mouseCallback(event, x, y, flags, param):
     global mouseX, mouseY
@@ -51,10 +51,12 @@ if __name__ == '__main__':
     #set up left and right cameras
     monoLeft = getMonoCamera(pipeline, isLeft = True)
     monoRight = getMonoCamera(pipeline, isLeft = False)
-
     #combine left and right cameras to form a stereo pair
     stereo = getStereoPair(pipeline, monoLeft, monoRight)
-    
+    camRgb = pipeline.create(dai.node.ColorCamera)
+    camRgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+    camRgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
+    camRgb.setVideoSize(1080, 720)
     #Set XLinkOut for disparity, rectifiedLeft, and rectifiedRight
     xoutDisp = pipeline.createXLinkOut()
     xoutDisp.setStreamName("disparity")
@@ -70,7 +72,11 @@ if __name__ == '__main__':
     stereo.rectifiedLeft.link(xoutRectifiedLeft.input)
 
     stereo.rectifiedRight.link(xoutRectifiedRight.input)
-
+    xoutRgb = pipeline.create(dai.node.XLinkOut)
+    xoutRgb.setStreamName("color")
+    camRgb.video.link(xoutRgb.input)
+    xoutRgb.input.setBlocking(False)
+    xoutRgb.input.setQueueSize(1)
     # Pipeline is now defined, now we can connect to the device
     with dai.Device(pipeline) as device:
 
@@ -78,13 +84,12 @@ if __name__ == '__main__':
         disparityQueue = device.getOutputQueue(name="disparity", maxSize=1, blocking=False)
         rectifiedLeftQueue = device.getOutputQueue(name="rectifiedLeft", maxSize=1, blocking=False)
         rectifiedRightQueue = device.getOutputQueue(name="rectifiedRight", maxSize=1, blocking=False)
-
+        video = device.getOutputQueue(name="color", maxSize=1, blocking=False)
 
         # Calculate a multiplier for colormapping disparity map
         disparityMultiplier = 255 / stereo.getMaxDisparity()
 
-        cv2.namedWindow("Stereo Pair")
-        cv2.setMouseCallback("Stereo Pair", mouseCallback)
+        
         
         # Variable use to toggle between side by side view and one frame view.
         sideBySide = False
@@ -93,30 +98,28 @@ if __name__ == '__main__':
             
             # Get disparity map
             disparity = getFrame(disparityQueue)
-            
+            videoIn = getFrame(video)
+
             # Colormap disparity for display
             disparity = (disparity * disparityMultiplier).astype(np.uint8)
             disparity = cv2.applyColorMap(disparity, cv2.COLORMAP_JET)
-            
             # Get left and right rectified frame
             leftFrame = getFrame(rectifiedLeftQueue)
             rightFrame = getFrame(rectifiedRightQueue)
+            # if sideBySide:
+            #     # Show side by side view
+            #     imOut = np.hstack((leftFrame, rightFrame))
+            # else :
+            #     # Show overlapping frames
+            #     imOut = np.uint8(leftFrame/2 + rightFrame/2)
             
-            if sideBySide:
-                # Show side by side view
-                imOut = np.hstack((leftFrame, rightFrame))
-            else :
-                # Show overlapping frames
-                imOut = np.uint8(leftFrame/2 + rightFrame/2)
             
+            # imOut = cv2.cvtColor(imOut,cv2.COLOR_GRAY2RGB) 
             
-            imOut = cv2.cvtColor(imOut,cv2.COLOR_GRAY2RGB) 
-            
-            imOut = cv2.line(imOut, (mouseX, mouseY), (1280, mouseY), (0, 0, 255), 2)
-            imOut = cv2.circle(imOut, (mouseX, mouseY), 2, (255, 255, 128), 2)
-            cv2.imshow("Stereo Pair", imOut)
+            # imOut = cv2.line(imOut, (mouseX, mouseY), (1280, mouseY), (0, 0, 255), 2)
+            # imOut = cv2.circle(imOut, (mouseX, mouseY), 2, (255, 255, 128), 2)
             cv2.imshow("Disparity", disparity)
-
+            cv2.imshow("RGB", videoIn)
             # Check for keyboard input
             key = cv2.waitKey(1)
             if key == ord('q'):
